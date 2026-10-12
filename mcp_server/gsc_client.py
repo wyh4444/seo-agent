@@ -10,29 +10,33 @@ from pathlib import Path
 from typing import Any
 
 TOKEN_FILE = "/home/ubuntu/.hermes/gsc_token.json"
-ENV_FILE = "/home/ubuntu/.hermes/.env"
+ENV_FILE = os.path.expanduser("~/.hermes/.env")
 API_BASE = "https://www.googleapis.com/webmasters/v3"
 
 
 def _load_env() -> dict:
-    # 先看 ~/.hermes/.env（标准位置），再看旧的 _work 路径（向后兼容）
-    candidates = [
-        os.path.expanduser("~/.hermes/.env"),
-        "/home/ubuntu/notes/_work/.env",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            env = {}
-            for line in Path(path).read_text().splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-            return env
-    raise FileNotFoundError(
-        f"找不到 GSC env。请在 ~/.hermes/.env 写 GSC_CLIENT_ID / GSC_CLIENT_SECRET"
-    )
+    """从 ~/.hermes/.env 读 GSC_CLIENT_ID / GSC_CLIENT_SECRET。
+
+    一次 fallback 也不留 — 死代码和误用风险 > 兼容性价值。
+    旧位置 /home/ubuntu/notes/_work/.env 已废弃。
+    """
+    env_path = os.path.expanduser("~/.hermes/.env")
+    if not os.path.exists(env_path):
+        raise FileNotFoundError(
+            f"找不到 {env_path}。请先创建并写入 GSC_CLIENT_ID / GSC_CLIENT_SECRET / GSC_REDIRECT_URI"
+        )
+    env = {}
+    for line in Path(env_path).read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env[k.strip()] = v.strip()
+    required = {"GSC_CLIENT_ID", "GSC_CLIENT_SECRET"}
+    missing = required - set(env.keys())
+    if missing:
+        raise ValueError(f"~/.hermes/.env 缺少字段: {missing}")
+    return env
 
 
 def _load_token() -> dict:

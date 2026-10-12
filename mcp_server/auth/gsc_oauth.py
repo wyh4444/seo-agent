@@ -23,22 +23,15 @@ import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
-# ---- 加载 .env ----
-def load_env(path: str = None):
-    if path is None:
-        # 优先 ~/.hermes/.env（标准），再回退到 /home/ubuntu/notes/_work/.env
-        candidates = [
-            os.path.expanduser("~/.hermes/.env"),
-            "/home/ubuntu/notes/_work/.env",
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                path = c
-                break
-        if path is None:
-            sys.exit("找不到 .env，请把 GSC_CLIENT_ID / GSC_CLIENT_SECRET 写到 ~/.hermes/.env")
+ENV_FILE = os.path.expanduser("~/.hermes/.env")
+
+
+def load_env():
+    """从 ~/.hermes/.env 读 GSC 凭证。无 fallback。"""
+    if not os.path.exists(ENV_FILE):
+        sys.exit(f"找不到 {ENV_FILE}。请先创建并写入 GSC_CLIENT_ID / GSC_CLIENT_SECRET")
     env = {}
-    for line in Path(path).read_text().splitlines():
+    for line in Path(ENV_FILE).read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -52,7 +45,7 @@ CLIENT_ID = ENV["GSC_CLIENT_ID"]
 CLIENT_SECRET = ENV["GSC_CLIENT_SECRET"]
 REDIRECT_URI = ENV.get("GSC_REDIRECT_URI", "http://localhost:8765")
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
-TOKEN_FILE = "/home/ubuntu/.hermes/gsc_token.json"
+TOKEN_FILE = os.path.expanduser("~/.hermes/gsc_token.json")
 
 
 # ---- PKCE (防 CSRF + 防 secret 泄露) ----

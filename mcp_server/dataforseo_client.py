@@ -138,8 +138,13 @@ def _dataforseo_post(endpoint: str, body: list) -> list[dict]:
         json=body,
         timeout=30,
     )
-    resp.raise_for_status()
-    return resp.json().get("tasks", [])
+    resp.raise_for_status()  # 4xx/5xx 立刻抛，避免 silent fail
+    data = resp.json()
+    tasks = data.get("tasks", [])
+    # DataForSEO 200 状态但 task.status_code 可能非 0（业务错误）
+    if tasks and tasks[0].get("status_code", 0) != 20000:
+        raise RuntimeError(f"DataForSEO task error: {tasks[0].get('status_message')}")
+    return tasks
 
 
 # ---- 公开 API（mock / 真实两套共用入口） ----
