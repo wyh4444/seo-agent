@@ -1,0 +1,23 @@
+# Secrets — NEVER commit. See docs/STARTUP.md for the right place to put these.
+.env
+*.env.local
+
+# OAuth tokens
+gsc_token.json
+*_token.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Local work files
+_work/
+*.log
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

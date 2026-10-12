@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "seo": {
+      "command": "/home/ubuntu/.hermes/hermes-agent/venv/bin/python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/home/ubuntu/notes/projects/seo-agent"
+    }
+  }
+}
