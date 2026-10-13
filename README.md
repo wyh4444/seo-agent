@@ -1,16 +1,30 @@
 # seo-agent
 
-A self-hosted SEO automation toolkit that exposes Google Search Console data to any LLM agent via the Model Context Protocol (MCP).
+Self-hosted SEO automation toolkit that exposes Google Search Console + DataForSEO data to any LLM agent via MCP.
 
-Inspired by [ChatSEO](https://chatseo.app/) and Nicholas Dulait's 26-step Claude SEO playbook + 50 Agent / 50 Skill architecture.
+Inspired by [ChatSEO](https://chatseo.app/) and Nicholas Dulait's 26-step Claude SEO playbook + 14-skill architecture (1 Chief + 4 departments: research / optimize / grow / measure).
 
-**4 GSC tools in one MCP server:**
-- `list_my_sites` — your authorized GSC sites
-- `gsc_top_queries` — top queries over a time window
-- `gsc_top_pages` — top pages over a time window
-- `gsc_opportunities` ⭐ — queries ranking 8-15 with high impressions & low CTR (best title/meta fix ROI)
+## What's inside
 
-Works with Claude Desktop, Cursor, and Hermes — anywhere that speaks MCP.
+### MCP server (8 tools)
+- **GSC (4)**: `list_my_sites`, `gsc_top_queries_tool`, `gsc_top_pages_tool`, `gsc_opportunities_tool`
+- **DataForSEO (3 + 1 status)**: `keyword_research_tool`, `audit_page_tool`, `rank_check_tool`, `is_mock_mode_tool`
+
+### 14 Skills
+- **Chief** ([`chief_of_seo/AGENT.md`](chief_of_seo/AGENT.md)) — 4 件事: 诊断 / 机会 / 点击 / 实验
+- **Research (4)**: [`skills/research/`](skills/research/) — keyword-research, search-intent-analysis, competitor-gap-analysis, topical-map-builder
+- **Optimize (4)**: [`skills/optimize/`](skills/optimize/) — title-meta-rewriter, on-page-audit-fix, content-brief-generator, internal-link-architect
+- **Grow (3)**: [`skills/grow/`](skills/grow/) — backlink-opportunity-finder, brand-mention-tracker, pr-pitch-generator
+- **Measure (3)**: [`skills/measure/`](skills/measure/) — weekly-audit-report, ab-experiment-designer, ranking-decline-investigator
+
+Index: [`skills/INDEX.md`](skills/INDEX.md)
+
+### 26-Step Playbook
+- [`prompts/01_install/`](prompts/01_install/) — Setup (steps 1-4)
+- [`prompts/02_keywords/`](prompts/02_keywords/) — Keyword research (steps 5-7)
+- [`prompts/03_template/`](prompts/03_template/) — Page templates (steps 8-15)
+- [`prompts/04_per_page/`](prompts/04_per_page/) — Per-page production (steps 16-19)
+- [`prompts/05_pacing/`](prompts/05_pacing/) — Pacing & scaling (steps 20-26)
 
 ## Quick start
 
@@ -23,18 +37,14 @@ pip install mcp requests
 
 Then follow [`docs/STARTUP.md`](docs/STARTUP.md) for the OAuth setup + MCP host connection.
 
-## Why
+## Status
 
-Most AI SEO advice is generic because the model has never seen your site. The fix: let the model query your real Search Console data. This server is the minimal viable version of that — 4 tools, no UI, no subscription, runs locally.
-
-## Roadmap
-
-- [x] GSC OAuth with PKCE + auto refresh
-- [x] 4 GSC tools exposed via MCP
-- [ ] DataForSEO integration (keyword research + on-page audit + rank tracking)
-- [ ] Chief of SEO Agent (4 jobs)
-- [ ] 50 Agent / 50 Skill prompt library
-- [ ] Scheduled weekly audits
+| Week | Scope | Status |
+|---|---|---|
+| W1 | GSC OAuth + 4 GSC tools | ✅ shipped |
+| W2 | DataForSEO skeleton (mock) + Research 4 skills + Playbook stages 1-2 | ✅ shipped |
+| W3 | Chief of SEO + Optimize 4 + Grow 3 + Measure 3 + Playbook stages 3-5 | ✅ shipped |
+| W4 (planned) | DataForSEO real API + GEO/AI search visibility (xAI) | ⏳ next |
 
 ## License
 
