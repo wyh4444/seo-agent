@@ -95,6 +95,38 @@ def gsc_opportunities(
     return out[:limit]
 
 
+def _opportunities_from_rows(
+    rows: list[dict],
+    min_impressions: int = 500,
+    max_position: float = 15.0,
+    min_ctr: float = 0.01,
+    limit: int = 50,
+) -> list[dict]:
+    """纯函数版: 从 GSC raw rows 算 opportunities。便于测试。
+
+    输入 rows 格式: [{query, page, clicks, impressions, ctr, position}, ...]
+    """
+    out = []
+    for r in rows:
+        if not (8.0 <= r["position"] <= max_position):
+            continue
+        if r["impressions"] < min_impressions:
+            continue
+        if r["ctr"] >= min_ctr:
+            continue
+        out.append({
+            "query": r["query"],
+            "page": r["page"],
+            "clicks": r["clicks"],
+            "impressions": r["impressions"],
+            "ctr": r["ctr"],
+            "position": r["position"],
+            "potential_clicks": round(r["impressions"] * 0.08, 0),
+        })
+    out.sort(key=lambda x: -x["potential_clicks"])
+    return out[:limit]
+
+
 if __name__ == "__main__":
     from ..gsc_client import list_sites
     sites = list_sites()

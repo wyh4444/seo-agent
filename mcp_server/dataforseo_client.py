@@ -104,7 +104,16 @@ def _mock_rank(keyword: str, country: str = "US") -> dict:
     }
 
 
-# ---- 真实 API 调用骨架（未启用） ----
+# ---- 真实 API 调用骨架 ----
+# 详细 endpoint：
+# - keywords_data/google_ads/search_volume/live   ($0.05/1k)
+# - dataforseo_labs/google/bulk_keyword_difficulty/live   ($0.05/1k)
+# - dataforseo_labs/google/keyword_ideas/live   ($0.10/1k)
+# - dataforseo_labs/google/keyword_overview/live   ($0.10/1k)
+# - on_page/instant_pages   ($0.30/page)
+# - serp/google/organic/live/advanced   ($0.50/1k SERP, 100 results each)
+
+
 def _dataforseo_post(endpoint: str, body: list) -> list[dict]:
     """调真实 DataForSEO API（等用户接入凭证后启用）。
 
@@ -120,6 +129,8 @@ def _dataforseo_post(endpoint: str, body: list) -> list[dict]:
     - dataforseo_labs/google/keyword_ideas/live
     - on_page/instant_pages
     - serp/google/organic/live/advanced
+
+    Task status_code 参考：20000 = success; 40400/40401 = task not found; 40000-40999 = client error
     """
     import base64
     import requests
@@ -147,44 +158,200 @@ def _dataforseo_post(endpoint: str, body: list) -> list[dict]:
     return tasks
 
 
+# ---- 真实 API 响应解析 ----
+
+def _parse_keyword_volume(task: dict) -> dict:
+    """从 keywords_data/google_ads/search_volume/live 的 task 解析。
+
+    DataForSEO 返回结构（task.result[0]）:
+        keyword: str
+        search_volume: int | None
+        cpc: float | None
+        competition: float | None  (0-1)
+        competition_level: "LOW" | "MEDIUM" | "HIGH" | None
+        monthly_searches: [{year, month, search_volume}]
+    """
+    item = (task.get("result") or [{}])[0]
+    competition = item.get("competition")
+    return {
+        "keyword": item.get("keyword"),
+        "volume": item.get("search_volume") or 0,
+        "cpc_usd": round(item.get("cpc") or 0.0, 2),
+        "difficulty_0_100": int((competition or 0) * 100),
+        "intent": _infer_intent(item.get("keyword", "")),
+        "competition_level": (item.get("competition_level") or "UNKNOWN").lower(),
+        "monthly_trend": item.get("monthly_searches", [])[-12:],  # 最近 12 月
+        "_source": "dataforseo",
+    }
+
+
+def _parse_keyword_ideas(task: dict) -> list[dict]:
+    """从 dataforseo_labs/google/keyword_ideas/live 解析。
+
+    task.result[0].items: [{keyword, search_volume, cpc, competition, ...}]
+    """
+    items = (task.get("result") or [{}])[0].get("items") or []
+    return [
+        {
+            "keyword": x.get("keyword"),
+            "volume": x.get("search_volume") or 0,
+            "cpc_usd": round(x.get("cpc") or 0.0, 2),
+            "difficulty_0_100": int((x.get("competition") or 0) * 100),
+            "_source": "dataforseo",
+        }
+        for x in items
+    ]
+
+
+def _parse_onpage(task: dict) -> dict:
+    """从 on_page/instant_pages 解析。
+
+    task.result[0] 包含: items[0] (主结果), crawled_pages, redirects, broken_links, etc.
+    """
+    result = task.get("result") or [{}]
+    items = result[0].get("items") or [{}]
+    page = items[0]
+    checks = page.get("checks") or {}
+    issues = []
+    for sev, k in (("error", "is_broken"), ("warning", "is_redirect"), ("info", "no_title")):
+        if checks.get(k):
+            issues.append({"severity": sev, "msg": k})
+    title = page.get("meta", {}).get("title", "")
+    return {
+        "url": page.get("url"),
+        "seo_score": _onpage_score(page),
+        "title": title,
+        "title_length": len(title),
+        "meta_description": page.get("meta", {}).get("description", ""),
+        "h1_count": len(page.get("meta", {}).get("h1", []) or []),
+        "word_count": page.get("content", {}).get("plain_text_word_count", 0) or page.get("content", {}).get("total_word_count", 0),
+        "internal_links": page.get("links_internal_count", 0),
+        "external_links": page.get("links_external_count", 0),
+        "images_missing_alt": page.get("content", {}).get("images_count_without_alt", 0),
+        "page_speed_estimate": "fast" if checks.get("high_loading_time") is False else "slow",
+        "issues": issues,
+        "_source": "dataforseo",
+    }
+
+
+def _onpage_score(page: dict) -> int:
+    """简单 0-100 评分（On-Page API 没现成 score，自己算）。"""
+    score = 100
+    if page.get("meta", {}).get("title") in (None, ""): score -= 30
+    elif not (30 <= len(page.get("meta", {}).get("title", "")) <= 65): score -= 10
+    if page.get("meta", {}).get("description") in (None, ""): score -= 15
+    if page.get("checks", {}).get("no_title"): score -= 10
+    if page.get("checks", {}).get("is_broken"): score -= 50
+    if page.get("content", {}).get("images_count_without_alt", 0) > 0: score -= 5
+    if (page.get("links_internal_count") or 0) < 3: score -= 10
+    return max(0, score)
+
+
+def _parse_serp(task: dict) -> dict:
+    """从 serp/google/organic/live/advanced 解析第一个有机结果。
+
+    task.result[0].items[0] = 第一个 organic item，包含 rank_absolute, url, title
+    """
+    items = (task.get("result") or [{}])[0].get("items") or []
+    organic = [x for x in items if x.get("type") == "organic"]
+    if not organic:
+        return {
+            "keyword": (task.get("result") or [{}])[0].get("keyword"),
+            "country": (task.get("result") or [{}])[0].get("location_name"),
+            "rank": None,
+            "url": None,
+            "title": None,
+            "search_volume": (task.get("result") or [{}])[0].get("search_volume"),
+            "_source": "dataforseo",
+        }
+    first = organic[0]
+    result = (task.get("result") or [{}])[0]
+    return {
+        "keyword": result.get("keyword"),
+        "country": result.get("location_name"),
+        "rank": first.get("rank_absolute"),
+        "url": first.get("url"),
+        "title": first.get("title"),
+        "search_volume": result.get("search_volume"),
+        "_source": "dataforseo",
+    }
+
+
+def _infer_intent(keyword: str) -> str:
+    """从关键词推搜索意图（DataForSEO 不直接给，用启发式）。"""
+    k = keyword.lower()
+    if any(w in k for w in ["buy", "price", "pricing", "discount", "coupon", "deal", "order", "shop", "cheap"]):
+        return "transactional"
+    if any(w in k for w in ["best", "review", "vs", "alternative", "comparison", "top", "compare"]):
+        return "commercial"
+    if any(w in k for w in ["login", "official", "download", "website"]):
+        return "navigational"
+    return "informational"
+
+
 # ---- 公开 API（mock / 真实两套共用入口） ----
+
+
 def keyword_research(query: str, country: str = "US") -> dict:
     """关键词研究：volume / CPC / difficulty / intent。
 
-    真实 API 切换：把下面 if is_mock_mode() 改成 if False 即可调真 API。
+    真实 API: keywords_data/google_ads/search_volume/live
     """
     if is_mock_mode():
         return _mock_keyword_data(query)
-    # TODO: 真实 DataForSEO 调用
-    # tasks = _dataforseo_post(
-    #     "keywords_data/google_ads/search_volume/live",
-    #     [{"keywords": [query], "location_name": _country_to_location(country)}],
-    # )
-    # return _parse_keyword_volume(tasks[0])
-    return _mock_keyword_data(query)  # fallback
+    tasks = _dataforseo_post(
+        "keywords_data/google_ads/search_volume/live",
+        [{"keywords": [query], "location_name": _country_to_location(country)}],
+    )
+    return _parse_keyword_volume(tasks[0])
+
+
+def keyword_ideas(seed: str, country: str = "US", limit: int = 20) -> list[dict]:
+    """关键词扩展：基于 seed 找相关长尾词。"""
+    if is_mock_mode():
+        # mock：用 mock_keyword_data 派生一些变体
+        import random
+        suffixes = ["for small business", "for solopreneur", "vs hubspot", "review",
+                    "alternative", "free", "cheap", "2026", "comparison", "best"]
+        out = []
+        for s in suffixes[:limit]:
+            out.append(_mock_keyword_data(f"{seed} {s}"))
+        return out
+    tasks = _dataforseo_post(
+        "dataforseo_labs/google/keyword_ideas/live",
+        [{
+            "keywords": [seed],
+            "location_name": _country_to_location(country),
+            "limit": limit,
+        }],
+    )
+    return _parse_keyword_ideas(tasks[0])
 
 
 def audit_page(url: str) -> dict:
-    """站内 on-page 审计：title/meta/headings/links/speed 等。"""
+    """站内 on-page 审计：title / meta / headings / links / speed。
+
+    真实 API: on_page/instant_pages ($0.30/page)
+    """
     if is_mock_mode():
         return _mock_audit(url)
-    # TODO: 真实 DataForSEO On-Page API
-    # tasks = _dataforseo_post("on_page/instant_pages", [{"url": url}])
-    # return _parse_onpage_result(tasks[0])
-    return _mock_audit(url)
+    tasks = _dataforseo_post("on_page/instant_pages", [{"url": url}])
+    return _parse_onpage(tasks[0])
 
 
 def rank_check(keyword: str, country: str = "US") -> dict:
-    """查某关键词当前排名（实时 SERP）。"""
+    """查某关键词当前排名第一的有机结果。"""
     if is_mock_mode():
         return _mock_rank(keyword, country)
-    # TODO: 真实 DataForSEO SERP API
-    # tasks = _dataforseo_post(
-    #     "serp/google/organic/live/advanced",
-    #     [{"keyword": keyword, "location_name": _country_to_location(country), "depth": 100}],
-    # )
-    # return _parse_serp_first(tasks[0])
-    return _mock_rank(keyword, country)
+    tasks = _dataforseo_post(
+        "serp/google/organic/live/advanced",
+        [{
+            "keyword": keyword,
+            "location_name": _country_to_location(country),
+            "depth": 10,  # 只看前 10，省钱
+        }],
+    )
+    return _parse_serp(tasks[0])
 
 
 # ---- 工具函数 ----

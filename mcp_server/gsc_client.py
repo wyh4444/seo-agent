@@ -15,12 +15,12 @@ API_BASE = "https://www.googleapis.com/webmasters/v3"
 
 
 def _load_env() -> dict:
-    """从 ~/.hermes/.env 读 GSC_CLIENT_ID / GSC_CLIENT_SECRET。
+    """从 ENV_FILE 读 GSC_CLIENT_ID / GSC_CLIENT_SECRET。
 
     一次 fallback 也不留 — 死代码和误用风险 > 兼容性价值。
     旧位置 /home/ubuntu/notes/_work/.env 已废弃。
     """
-    env_path = os.path.expanduser("~/.hermes/.env")
+    env_path = ENV_FILE
     if not os.path.exists(env_path):
         raise FileNotFoundError(
             f"找不到 {env_path}。请先创建并写入 GSC_CLIENT_ID / GSC_CLIENT_SECRET / GSC_REDIRECT_URI"
@@ -35,7 +35,7 @@ def _load_env() -> dict:
     required = {"GSC_CLIENT_ID", "GSC_CLIENT_SECRET"}
     missing = required - set(env.keys())
     if missing:
-        raise ValueError(f"~/.hermes/.env 缺少字段: {missing}")
+        raise ValueError(f"{env_path} 缺少字段: {missing}")
     return env
 
 

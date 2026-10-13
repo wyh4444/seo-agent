@@ -21,7 +21,8 @@ from mcp.server.fastmcp import FastMCP
 from .tools.gsc_top_queries import gsc_top_queries
 from .tools.gsc_top_pages import gsc_top_pages, gsc_opportunities
 from .gsc_client import list_sites
-from .dataforseo_client import keyword_research, audit_page, rank_check, is_mock_mode
+from .dataforseo_client import keyword_research, keyword_ideas, audit_page, rank_check, is_mock_mode
+from .xai_client import ask_about_brand, geo_audit, generate_brand_questions, is_xai_mock
 
 mcp = FastMCP("seo-agent")
 
@@ -119,6 +120,25 @@ def keyword_research_tool(
 
 
 @mcp.tool()
+def keyword_ideas_tool(
+    seed: str,
+    country: str = "US",
+    limit: int = 20,
+) -> list[dict]:
+    """关键词扩展：基于 seed 找 N 个相关长尾词。
+
+    ⚠️ 当前为 mock 模式。
+    Args:
+        seed: 种子关键词
+        country: ISO 国家代码，默认 US
+        limit: 最多返回条数
+    Returns:
+        [{"keyword", "volume", "cpc_usd", "difficulty_0_100", "_source"}]
+    """
+    return keyword_ideas(seed, country, limit)
+
+
+@mcp.tool()
 def audit_page_tool(url: str) -> dict:
     """站内 on-page 审计：title / meta / headings / links / speed。
 
@@ -153,9 +173,48 @@ def rank_check_tool(
 @mcp.tool()
 def is_mock_mode_tool() -> dict:
     """检查 DataForSEO 是否在 mock 模式。"""
-    return {"mock": is_mock_mode(),
-            "reason": "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD 未在 ~/.hermes/.env 配置"
-                       if is_mock_mode() else "credentials found"}
+    return {"dataforseo_mock": is_mock_mode(),
+            "xai_mock": is_xai_mock(),
+            "reason_dataforseo": "DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD 未在 ~/.hermes/.env 配置"
+                       if is_mock_mode() else "credentials found",
+            "reason_xai": "XAI_API_KEY 未在 ~/.hermes/.env 配置" if is_xai_mock() else "credentials found"}
+
+
+# ---- xAI / GEO 工具（GEO 监测：AI 答案里你的品牌出现频率） ----
+
+@mcp.tool()
+def ask_about_brand_tool(brand: str, question: str) -> dict:
+    """【GEO 监测】问 Grok 一个关于品牌/产品的问题，看 AI 答案里你品牌被提了几次。
+
+    ⚠️ 当前为 mock 模式（XAI_API_KEY 未配）。结果含 `_source: "mock"`，**不要当真**。
+    接入真实 API：把 xAI API key 写到 ~/.hermes/.env 的 XAI_API_KEY。
+
+    Args:
+        brand: 监测的品牌/产品/网站名
+        question: 问 AI 的问题（**不要含 brand**，让 AI 自然提）
+
+    Returns:
+        {"question", "brand", "mentioned" (bool), "mention_count", "cited_sources", "raw_answer", "_source"}
+    """
+    return ask_about_brand(brand, question)
+
+
+@mcp.tool()
+def geo_audit_tool(brand: str, count: int = 10) -> dict:
+    """【GEO 审计】批量问 Grok N 个关于品牌的问题，统计提及率。
+
+    适合每月做一次：你的品牌在 AI 答案里"出现率"是多少？
+
+    ⚠️ 当前为 mock 模式。
+    Args:
+        brand: 监测的品牌
+        count: 问 N 个问题（默认 10），自动从模板生成
+
+    Returns:
+        {"brand", "questions_asked", "mention_count", "mention_rate", "details", "_source"}
+    """
+    questions = generate_brand_questions(brand, count=count)
+    return geo_audit(brand, questions)
 
 
 if __name__ == "__main__":
